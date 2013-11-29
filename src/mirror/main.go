@@ -36,6 +36,11 @@ type fileInfo struct {
 	info os.FileInfo
 }
 
+type filter struct {
+	segment bool
+	pattern *regexp.Regexp
+}
+
 type fileInfoSlice []fileInfo
 
 func (slice fileInfoSlice) Len() int {
@@ -93,7 +98,6 @@ func main() {
 
 func parseOptions() (options options) {
 	parser := flags.NewParser(&options, flags.HelpFlag|flags.PassDoubleDash)
-	parser.ApplicationName = filepath.Base(os.Args[0])
 	parser.Usage = "[OPTIONS] localPath user[:password]@remoteHost[:port]/path"
 
 	args, err := parser.Parse()
@@ -144,21 +148,27 @@ func printError(err interface{}) {
 	fmt.Fprintln(os.Stderr, "Error:", err)
 }
 
-func buildPathPatterns(patterns []string) []*regexp.Regexp {
-	regexps := make([]*regexp.Regexp, 0, 10)
+func buildPathPatterns(patterns []string) []filter {
+	regexps := make([]filter, 0, 10)
 	const placeholder = "\x01HOLD\x01"
 	for _, pattern := range patterns {
 		pattern = strings.Replace(pattern, "*", placeholder, -1)
 		pattern = strings.Replace(pattern, `\`, `/`, -1)
+		segment := true
+		if len(pattern) > 0 && pattern[0] == '/' {
+			segment = false
+			pattern = pattern[1:]
+		}
 		pattern = regexp.QuoteMeta(pattern)
-		pattern = "^" + strings.Replace(pattern, placeholder, ".*?", -1) + "$"
+		pattern = strings.Replace(pattern, placeholder+placeholder, ".*?", -1)
+		pattern = "^" + strings.Replace(pattern, placeholder, "[^/]*?", -1) + "$"
 		re := regexp.MustCompile(pattern)
-		regexps = append(regexps, re)
+		regexps = append(regexps, filter{segment, re})
 	}
 	return regexps
 }
 
-func getLocalFiles(localPath string, filters []*regexp.Regexp) []fileInfo {
+func getLocalFiles(localPath string, filters []filter) []fileInfo {
 	if stat, err := os.Stat(localPath); err != nil {
 		printError(localPath + " does not exist")
 		os.Exit(1)
@@ -182,7 +192,7 @@ func getLocalFiles(localPath string, filters []*regexp.Regexp) []fileInfo {
 	return files
 }
 
-func getRemoteFiles(client *sftp.Client, remotePath string, filters []*regexp.Regexp) []fileInfo {
+func getRemoteFiles(client *sftp.Client, remotePath string, filters []filter) []fileInfo {
 	if stat, err := client.Lstat(remotePath); err != nil {
 		printError(remotePath + " does not exist")
 		os.Exit(1)
@@ -211,7 +221,7 @@ func getRemoteFiles(client *sftp.Client, remotePath string, filters []*regexp.Re
 	return files
 }
 
-func getFilteredPaths(files []fileInfo, filters []*regexp.Regexp) []fileInfo {
+func getFilteredPaths(files []fileInfo, filters []filter) []fileInfo {
 	filtered := make([]fileInfo, 0, len(files))
 	var excludeDir string
 	for _, file := range files {
@@ -220,7 +230,8 @@ func getFilteredPaths(files []fileInfo, filters []*regexp.Regexp) []fileInfo {
 		} else {
 			include := true
 			for _, filter := range filters {
-				if filter.MatchString(file.info.Name()) || filter.MatchString(file.path) {
+				if filter.segment && filter.pattern.MatchString(file.info.Name()) ||
+					!filter.segment && filter.pattern.MatchString(file.path) {
 					if file.info.IsDir() {
 						excludeDir = file.path
 					}
@@ -280,6 +291,11 @@ func getDeletedFiles(localFiles, remoteFiles []fileInfo) []fileInfo {
 			return localFiles[index].path >= file.path
 		})
 		if len(localFiles) <= index || localFiles[index].path != file.path {
+			files = append(files, file)
+		} else if localFiles[index].info.IsDir() && !remoteFiles[index].info.IsDir() ||
+			!localFiles[index].info.IsDir() && remoteFiles[index].info.IsDir() {
+			// Delete remote file if local equivalent is a directory
+			// Delete remote directory if local equivalend is a file
 			files = append(files, file)
 		}
 	}

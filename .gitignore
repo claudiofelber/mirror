@@ -1,4 +1,7 @@
 /.idea/workspace.xml
+/bin
+/pkg
 /src/code.google.com
 /src/github.com
 /sync.*
+/*.iml

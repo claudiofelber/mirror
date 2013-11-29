@@ -1,0 +1,1 @@
+gofmt -w=true `dirname $0`/src/mirror/*.go

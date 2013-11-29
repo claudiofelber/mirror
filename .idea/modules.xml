@@ -2,7 +2,7 @@
 <project version="4">
   <component name="ProjectModuleManager">
     <modules>
-      <module fileurl="file://$PROJECT_DIR$/sync.iml" filepath="$PROJECT_DIR$/sync.iml" />
+      <module fileurl="file://$PROJECT_DIR$/mirror-git.iml" filepath="$PROJECT_DIR$/mirror-git.iml" />
     </modules>
   </component>
 </project>

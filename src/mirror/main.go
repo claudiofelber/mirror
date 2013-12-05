@@ -292,8 +292,8 @@ func getDeletedFiles(localFiles, remoteFiles []fileInfo) []fileInfo {
 		})
 		if len(localFiles) <= index || localFiles[index].path != file.path {
 			files = append(files, file)
-		} else if localFiles[index].info.IsDir() && !remoteFiles[index].info.IsDir() ||
-			!localFiles[index].info.IsDir() && remoteFiles[index].info.IsDir() {
+		} else if localFiles[index].info.IsDir() && !file.info.IsDir() ||
+			!localFiles[index].info.IsDir() && file.info.IsDir() {
 			// Delete remote file if local equivalent is a directory
 			// Delete remote directory if local equivalend is a file
 			files = append(files, file)

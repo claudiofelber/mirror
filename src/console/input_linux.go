@@ -1,6 +1,6 @@
 // +build linux
 
-package terminal
+package console
 
 import "syscall"
 

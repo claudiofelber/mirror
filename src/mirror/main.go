@@ -1,13 +1,12 @@
 package main
 
 import (
-	"bufio"
 	"code.google.com/p/go.crypto/ssh"
+	"console"
 	"fmt"
-	flags "github.com/jessevdk/go-flags"
-	//"github.com/pkg/sftp"
 	"github.com/claudiofelber/sftp"
-	"io/ioutil"
+	flags "github.com/jessevdk/go-flags"
+	"io"
 	"os"
 	"path"
 	"path/filepath"
@@ -17,7 +16,7 @@ import (
 	"strings"
 )
 
-const ProgramVersion = "1.0.0"
+const ProgramVersion = "1.1.0"
 
 type options struct {
 	Simulate       bool     `short:"s" long:"simulate" description:"Shows what files would be copied or deleted but does not actually do it"`
@@ -32,8 +31,9 @@ type options struct {
 }
 
 type fileInfo struct {
-	path string
-	info os.FileInfo
+	path    string
+	info    os.FileInfo
+	deleted bool
 }
 
 type filter struct {
@@ -67,15 +67,18 @@ func main() {
 	ignorePaths := buildPathPatterns(options.Ignore)
 	localExcludes := append(excludePaths, ignorePaths...)
 
-	fmt.Println("Analyzing local files")
-	localFiles := getLocalFiles(options.LocalPath, localExcludes)
-
-	if len(options.RemotePassword) == 0 {
-		options.RemotePassword = readPassword()
+	if options.RemotePassword == "" {
+		fmt.Print("Enter remote password: ")
+		options.RemotePassword = console.ReadPassword()
+		fmt.Println()
 	}
 
+	fmt.Println("Connecting to", options.RemoteHost)
 	client := connectToHost(options.RemoteHost, options.RemoteUser, options.RemotePassword, options.RemotePort)
 	defer client.Close()
+
+	fmt.Println("Analyzing local files")
+	localFiles := getLocalFiles(options.LocalPath, localExcludes)
 
 	fmt.Println("Analyzing remote files")
 	remoteFiles := getRemoteFiles(client, options.RemotePath, ignorePaths)
@@ -142,6 +145,7 @@ func parseOptions() (options options) {
 func printUsage(parser *flags.Parser) {
 	fmt.Printf("SFTP mirror %s, (c) 2013 Perron2 GmbH, Claudio Felber, All Rights Reserved\n\n", ProgramVersion)
 	parser.WriteHelp(os.Stdout)
+	fmt.Println()
 }
 
 func printError(err interface{}) {
@@ -180,12 +184,12 @@ func getLocalFiles(localPath string, filters []filter) []fileInfo {
 	files := make([]fileInfo, 0, 10)
 	localPathLength := len(localPath)
 	filepath.Walk(localPath, func(path string, info os.FileInfo, err error) error {
-		path = strings.Replace(strings.TrimLeft(path[localPathLength:], "/\\"), `\`, `/`, -1)
-		if len(path) > 0 {
-			files = append(files, fileInfo{path, info})
-		}
-		return nil
-	})
+			path = strings.Replace(strings.TrimLeft(path[localPathLength:], "/\\"), `\`, `/`, -1)
+			if len(path) > 0 {
+				files = append(files, fileInfo{path, info, false})
+			}
+			return nil
+		})
 
 	files = getFilteredPaths(files, filters)
 	sort.Sort(fileInfoSlice(fileInfoSlice(files)))
@@ -212,7 +216,7 @@ func getRemoteFiles(client *sftp.Client, remotePath string, filters []filter) []
 		path := walker.Path()
 		path = strings.TrimLeft(path[remotePathLength:], "/")
 		if len(path) > 0 {
-			files = append(files, fileInfo{path, walker.Stat()})
+			files = append(files, fileInfo{path, walker.Stat(), false})
 		}
 	}
 
@@ -247,18 +251,6 @@ func getFilteredPaths(files []fileInfo, filters []filter) []fileInfo {
 	return filtered
 }
 
-func readPassword() (password string) {
-	fmt.Print("Password: ")
-	reader := bufio.NewReader(os.Stdin)
-	if input, err := reader.ReadString('\n'); err != nil {
-		printError("Cannot read password")
-		os.Exit(1)
-	} else {
-		password = strings.TrimRight(input, "\n\r")
-	}
-	return
-}
-
 func connectToHost(host, user, password string, port int16) *sftp.Client {
 	config := &ssh.ClientConfig{
 		User: user,
@@ -286,10 +278,10 @@ func connectToHost(host, user, password string, port int16) *sftp.Client {
 
 func getDeletedFiles(localFiles, remoteFiles []fileInfo) []fileInfo {
 	files := make([]fileInfo, 0, 10)
-	for _, file := range remoteFiles {
+	for remoteIndex, file := range remoteFiles {
 		index := sort.Search(len(localFiles), func(index int) bool {
-			return localFiles[index].path >= file.path
-		})
+				return localFiles[index].path >= file.path
+			})
 		if len(localFiles) <= index || localFiles[index].path != file.path {
 			files = append(files, file)
 		} else if localFiles[index].info.IsDir() && !file.info.IsDir() ||
@@ -297,6 +289,9 @@ func getDeletedFiles(localFiles, remoteFiles []fileInfo) []fileInfo {
 			// Delete remote file if local equivalent is a directory
 			// Delete remote directory if local equivalend is a file
 			files = append(files, file)
+			remoteFiles[remoteIndex].deleted = true
+			//file.deleted = true
+
 		}
 	}
 	return files
@@ -306,9 +301,9 @@ func getNewFiles(localFiles, remoteFiles []fileInfo) []fileInfo {
 	files := make([]fileInfo, 0, 10)
 	for _, file := range localFiles {
 		index := sort.Search(len(remoteFiles), func(index int) bool {
-			return remoteFiles[index].path >= file.path
-		})
-		if len(remoteFiles) <= index || remoteFiles[index].path != file.path {
+				return remoteFiles[index].path >= file.path
+			})
+		if len(remoteFiles) <= index || remoteFiles[index].path != file.path || remoteFiles[index].deleted {
 			files = append(files, file)
 		}
 	}
@@ -319,10 +314,12 @@ func getUpdatedFiles(localFiles, remoteFiles []fileInfo) []fileInfo {
 	files := make([]fileInfo, 0, 10)
 	for _, file := range localFiles {
 		index := sort.Search(len(remoteFiles), func(index int) bool {
-			return remoteFiles[index].path >= file.path
-		})
+				return remoteFiles[index].path >= file.path
+			})
 		if len(remoteFiles) > index && remoteFiles[index].path == file.path {
-			if !file.info.IsDir() && file.info.ModTime().After(remoteFiles[index].info.ModTime()) {
+			dateChanged := file.info.ModTime().Unix() > remoteFiles[index].info.ModTime().Unix()
+			sizeChanged := file.info.Size() != remoteFiles[index].info.Size()
+			if !file.info.IsDir() && !remoteFiles[index].deleted && (dateChanged || sizeChanged) {
 				files = append(files, file)
 			}
 		}
@@ -340,9 +337,15 @@ func deleteFiles(client *sftp.Client, path string, files []fileInfo, simulate bo
 				fmt.Print("  " + files[i].path)
 				if err := client.Remove(client.Join(path, files[i].path)); err != nil {
 					failed++
-					fmt.Println(" FAILED")
+					console.SetTextColor(console.LIGHTRED)
+					fmt.Print(" FAILED")
+					console.ResetColor()
+					fmt.Println()
 				} else {
 					successful++
+					console.SetTextColor(console.LIGHTGREEN)
+					fmt.Print(" OK")
+					console.ResetColor()
 					fmt.Println()
 				}
 			}
@@ -367,20 +370,29 @@ func copyFiles(client *sftp.Client, localPath, remotePath string, files []fileIn
 				if file.info.IsDir() {
 					if err := client.Mkdir(client.Join(remotePath, file.path)); err == nil {
 						successful++
+						console.SetTextColor(console.LIGHTGREEN)
+						fmt.Print(" OK")
+						console.ResetColor()
 						fmt.Println()
 						continue
 					}
 				} else {
 					path := client.Join(localPath, file.path)
-					buffer, err := ioutil.ReadFile(path)
+					localFile, err := os.Open(path)
 					if err == nil {
+						defer localFile.Close()
+						stat, _ := localFile.Stat()
 						path = client.Join(remotePath, file.path)
-						file, err := client.Create(path)
+						remoteFile, err := client.Create(path)
 						if err == nil {
-							defer file.Close()
-							_, err := file.Write(buffer)
-							if err == nil {
+							defer remoteFile.Close()
+							written, err := copyFile(localFile, remoteFile, stat.Size())
+							if err == nil && written == stat.Size() {
+								client.Chtimes(path, file.info.ModTime(), file.info.ModTime())
 								successful++
+								console.SetTextColor(console.LIGHTGREEN)
+								fmt.Print(" OK")
+								console.ResetColor()
 								fmt.Println()
 								continue
 							}
@@ -389,9 +401,57 @@ func copyFiles(client *sftp.Client, localPath, remotePath string, files []fileIn
 				}
 
 				failed++
-				fmt.Println(" FAILED")
+				console.SetTextColor(console.LIGHTRED)
+				fmt.Print(" FAILED")
+				console.ResetColor()
+				fmt.Println()
 			}
 		}
 	}
 	return
+}
+
+func copyFile(source io.Reader, dest io.Writer, length int64) (written int64, err error) {
+	buf := make([]byte, 32*1024)
+	showPercentage := length > int64(len(buf))
+	percentage := ""
+	if showPercentage {
+		percentage = " 0%"
+	}
+	fmt.Print(percentage)
+	for {
+		nr, er := source.Read(buf)
+		if nr > 0 {
+			nw, ew := dest.Write(buf[0:nr])
+			if nw > 0 {
+				written += int64(nw)
+			}
+			if ew != nil {
+				err = ew
+				break
+			}
+			if nr != nw {
+				err = io.ErrShortWrite
+				break
+			}
+		}
+		if er == io.EOF {
+			break
+		}
+		if er != nil {
+			err = er
+			break
+		}
+		if showPercentage {
+			fmt.Print(strings.Repeat("\b", len(percentage)))
+			percentage = " " + strconv.Itoa(int(float64(written*100)/float64(length)+0.5)) + "%"
+			fmt.Print(percentage)
+		}
+	}
+	if showPercentage {
+		fmt.Print(strings.Repeat("\b", len(percentage)))
+		fmt.Print(strings.Repeat(" ", len(percentage)))
+		fmt.Print(strings.Repeat("\b", len(percentage)))
+	}
+	return written, err
 }

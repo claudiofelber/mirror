@@ -1,11 +1,8 @@
 package main
 
 import (
-	"code.google.com/p/go.crypto/ssh"
 	"console"
 	"fmt"
-	"github.com/claudiofelber/sftp"
-	flags "github.com/jessevdk/go-flags"
 	"io"
 	"os"
 	"path"
@@ -14,9 +11,13 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+
+	"github.com/jessevdk/go-flags"
+	"github.com/pkg/sftp"
+	"golang.org/x/crypto/ssh"
 )
 
-const ProgramVersion = "1.1.0"
+const ProgramVersion = "1.1.1"
 
 type options struct {
 	Simulate       bool     `short:"s" long:"simulate" description:"Shows what files would be copied or deleted but does not actually do it"`
@@ -143,7 +144,7 @@ func parseOptions() (options options) {
 }
 
 func printUsage(parser *flags.Parser) {
-	fmt.Printf("SFTP mirror %s, (c) 2013 Perron2 GmbH, Claudio Felber, All Rights Reserved\n\n", ProgramVersion)
+	fmt.Printf("SFTP mirror %s, (c) 2013–1015 Perron2 GmbH, Claudio Felber, All Rights Reserved\n\n", ProgramVersion)
 	parser.WriteHelp(os.Stdout)
 	fmt.Println()
 }
@@ -184,12 +185,12 @@ func getLocalFiles(localPath string, filters []filter) []fileInfo {
 	files := make([]fileInfo, 0, 10)
 	localPathLength := len(localPath)
 	filepath.Walk(localPath, func(path string, info os.FileInfo, err error) error {
-			path = strings.Replace(strings.TrimLeft(path[localPathLength:], "/\\"), `\`, `/`, -1)
-			if len(path) > 0 {
-				files = append(files, fileInfo{path, info, false})
-			}
-			return nil
-		})
+		path = strings.Replace(strings.TrimLeft(path[localPathLength:], "/\\"), `\`, `/`, -1)
+		if len(path) > 0 {
+			files = append(files, fileInfo{path, info, false})
+		}
+		return nil
+	})
 
 	files = getFilteredPaths(files, filters)
 	sort.Sort(fileInfoSlice(fileInfoSlice(files)))
@@ -254,8 +255,8 @@ func getFilteredPaths(files []fileInfo, filters []filter) []fileInfo {
 func connectToHost(host, user, password string, port int16) *sftp.Client {
 	config := &ssh.ClientConfig{
 		User: user,
-		Auth: []ssh.ClientAuth{
-			ssh.ClientAuthPassword(passwordProvider(password)),
+		Auth: []ssh.AuthMethod{
+			ssh.Password(password),
 		},
 	}
 
@@ -280,14 +281,14 @@ func getDeletedFiles(localFiles, remoteFiles []fileInfo) []fileInfo {
 	files := make([]fileInfo, 0, 10)
 	for remoteIndex, file := range remoteFiles {
 		index := sort.Search(len(localFiles), func(index int) bool {
-				return localFiles[index].path >= file.path
-			})
+			return localFiles[index].path >= file.path
+		})
 		if len(localFiles) <= index || localFiles[index].path != file.path {
 			files = append(files, file)
 		} else if localFiles[index].info.IsDir() && !file.info.IsDir() ||
 			!localFiles[index].info.IsDir() && file.info.IsDir() {
 			// Delete remote file if local equivalent is a directory
-			// Delete remote directory if local equivalend is a file
+			// Delete remote directory if local equivalent is a file
 			files = append(files, file)
 			remoteFiles[remoteIndex].deleted = true
 			//file.deleted = true
@@ -301,8 +302,8 @@ func getNewFiles(localFiles, remoteFiles []fileInfo) []fileInfo {
 	files := make([]fileInfo, 0, 10)
 	for _, file := range localFiles {
 		index := sort.Search(len(remoteFiles), func(index int) bool {
-				return remoteFiles[index].path >= file.path
-			})
+			return remoteFiles[index].path >= file.path
+		})
 		if len(remoteFiles) <= index || remoteFiles[index].path != file.path || remoteFiles[index].deleted {
 			files = append(files, file)
 		}
@@ -314,8 +315,8 @@ func getUpdatedFiles(localFiles, remoteFiles []fileInfo) []fileInfo {
 	files := make([]fileInfo, 0, 10)
 	for _, file := range localFiles {
 		index := sort.Search(len(remoteFiles), func(index int) bool {
-				return remoteFiles[index].path >= file.path
-			})
+			return remoteFiles[index].path >= file.path
+		})
 		if len(remoteFiles) > index && remoteFiles[index].path == file.path {
 			dateChanged := file.info.ModTime().Unix() > remoteFiles[index].info.ModTime().Unix()
 			sizeChanged := file.info.Size() != remoteFiles[index].info.Size()

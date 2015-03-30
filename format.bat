@@ -1,2 +1,1 @@
-for %%f in (%~dp0src\mirror\*.go) do gofmt -w=true %%f
-for %%f in (%~dp0src\console\*.go) do gofmt -w=true %%f
+gofmt -w=true src\console src\mirror

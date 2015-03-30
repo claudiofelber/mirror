@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project version="4">
+  <component name="GoProjectSettings">
+    <option name="goFmtOnSave" value="false" />
+    <option name="goimportsOnSave" value="true" />
+    <option name="goimportsPath" value="/usr/local/go/bin" />
+  </component>
+</project>

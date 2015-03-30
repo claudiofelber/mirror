@@ -17,7 +17,7 @@ import (
 	"golang.org/x/crypto/ssh"
 )
 
-const ProgramVersion = "1.1.1"
+const ProgramVersion = "1.1.2"
 
 type options struct {
 	Simulate       bool     `short:"s" long:"simulate" description:"Shows what files would be copied or deleted but does not actually do it"`
@@ -381,12 +381,10 @@ func copyFiles(client *sftp.Client, localPath, remotePath string, files []fileIn
 					path := client.Join(localPath, file.path)
 					localFile, err := os.Open(path)
 					if err == nil {
-						defer localFile.Close()
 						stat, _ := localFile.Stat()
 						path = client.Join(remotePath, file.path)
 						remoteFile, err := client.Create(path)
 						if err == nil {
-							defer remoteFile.Close()
 							written, err := copyFile(localFile, remoteFile, stat.Size())
 							if err == nil && written == stat.Size() {
 								client.Chtimes(path, file.info.ModTime(), file.info.ModTime())
@@ -395,9 +393,13 @@ func copyFiles(client *sftp.Client, localPath, remotePath string, files []fileIn
 								fmt.Print(" OK")
 								console.ResetColor()
 								fmt.Println()
+								localFile.Close()
+								remoteFile.Close()
 								continue
 							}
+							remoteFile.Close()
 						}
+						localFile.Close()
 					}
 				}
 

@@ -17,7 +17,7 @@ import (
 	"golang.org/x/crypto/ssh"
 )
 
-const ProgramVersion = "1.1.2"
+const ProgramVersion = "1.1.3"
 
 type options struct {
 	Simulate       bool     `short:"s" long:"simulate" description:"Shows what files would be copied or deleted but does not actually do it"`
@@ -144,7 +144,7 @@ func parseOptions() (options options) {
 }
 
 func printUsage(parser *flags.Parser) {
-	fmt.Printf("SFTP mirror %s, (c) 2013–1015 Perron2 GmbH, Claudio Felber, All Rights Reserved\n\n", ProgramVersion)
+	fmt.Printf("SFTP mirror %s, (c) 2013–1017 Perron2 GmbH, Claudio Felber, All Rights Reserved\n\n", ProgramVersion)
 	parser.WriteHelp(os.Stdout)
 	fmt.Println()
 }
@@ -258,6 +258,7 @@ func connectToHost(host, user, password string, port int16) *sftp.Client {
 		Auth: []ssh.AuthMethod{
 			ssh.Password(password),
 		},
+		HostKeyCallback: ssh.InsecureIgnoreHostKey(),
 	}
 
 	hostAndPort := fmt.Sprintf("%s:%d", host, port)

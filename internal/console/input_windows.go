@@ -29,11 +29,9 @@ func readChar() rune {
 	var events uint32
 
 	for {
-		readConsoleInput.Call(uintptr(syscall.Stdin), uintptr(unsafe.Pointer(&buffer)), 1, uintptr(unsafe.Pointer(&events)))
+		_, _, _ = readConsoleInput.Call(uintptr(syscall.Stdin), uintptr(unsafe.Pointer(&buffer)), 1, uintptr(unsafe.Pointer(&events)))
 		if buffer.bKeyDown != 0 && buffer.uChar != 0 {
 			return rune(buffer.uChar)
 		}
 	}
-
-	return 0
 }

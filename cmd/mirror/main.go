@@ -1,9 +1,10 @@
 package main
 
 import (
-	"console"
 	"fmt"
 	"io"
+	"mirror/internal"
+	"mirror/internal/console"
 	"os"
 	"path"
 	"path/filepath"
@@ -17,7 +18,7 @@ import (
 	"golang.org/x/crypto/ssh"
 )
 
-const ProgramVersion = "1.1.3"
+const ProgramVersion = "1.2"
 
 type options struct {
 	Simulate       bool     `short:"s" long:"simulate" description:"Shows what files would be copied or deleted but does not actually do it"`
@@ -54,12 +55,6 @@ func (slice fileInfoSlice) Less(a, b int) bool {
 
 func (slice fileInfoSlice) Swap(a, b int) {
 	slice[a], slice[b] = slice[b], slice[a]
-}
-
-type passwordProvider string
-
-func (p passwordProvider) Password(_ string) (string, error) {
-	return string(p), nil
 }
 
 func main() {
@@ -184,7 +179,7 @@ func getLocalFiles(localPath string, filters []filter) []fileInfo {
 
 	files := make([]fileInfo, 0, 10)
 	localPathLength := len(localPath)
-	filepath.Walk(localPath, func(path string, info os.FileInfo, err error) error {
+	_ = filepath.Walk(localPath, func(path string, info os.FileInfo, err error) error {
 		path = strings.Replace(strings.TrimLeft(path[localPathLength:], "/\\"), `\`, `/`, -1)
 		if len(path) > 0 {
 			files = append(files, fileInfo{path, info, false})
@@ -193,7 +188,7 @@ func getLocalFiles(localPath string, filters []filter) []fileInfo {
 	})
 
 	files = getFilteredPaths(files, filters)
-	sort.Sort(fileInfoSlice(fileInfoSlice(files)))
+	sort.Sort(fileInfoSlice(files))
 	return files
 }
 
@@ -214,15 +209,15 @@ func getRemoteFiles(client *sftp.Client, remotePath string, filters []filter) []
 	}
 
 	for walker.Step() {
-		path := walker.Path()
-		path = strings.TrimLeft(path[remotePathLength:], "/")
-		if len(path) > 0 {
-			files = append(files, fileInfo{path, walker.Stat(), false})
+		p := walker.Path()
+		p = strings.TrimLeft(p[remotePathLength:], "/")
+		if len(p) > 0 {
+			files = append(files, fileInfo{p, walker.Stat(), false})
 		}
 	}
 
 	files = getFilteredPaths(files, filters)
-	sort.Sort(fileInfoSlice(fileInfoSlice(files)))
+	sort.Sort(fileInfoSlice(files))
 	return files
 }
 
@@ -379,16 +374,16 @@ func copyFiles(client *sftp.Client, localPath, remotePath string, files []fileIn
 						continue
 					}
 				} else {
-					path := client.Join(localPath, file.path)
-					localFile, err := os.Open(path)
+					p := client.Join(localPath, file.path)
+					localFile, err := os.Open(p)
 					if err == nil {
 						stat, _ := localFile.Stat()
-						path = client.Join(remotePath, file.path)
-						remoteFile, err := client.Create(path)
+						p = client.Join(remotePath, file.path)
+						remoteFile, err := client.Create(p)
 						if err == nil {
 							written, err := copyFile(localFile, remoteFile, stat.Size())
 							if err == nil && written == stat.Size() {
-								client.Chtimes(path, file.info.ModTime(), file.info.ModTime())
+								_ = client.Chtimes(p, file.info.ModTime(), file.info.ModTime())
 								successful++
 								console.SetTextColor(console.LIGHTGREEN)
 								fmt.Print(" OK")
@@ -415,47 +410,38 @@ func copyFiles(client *sftp.Client, localPath, remotePath string, files []fileIn
 	return
 }
 
-func copyFile(source io.Reader, dest io.Writer, length int64) (written int64, err error) {
+func copyFile(source io.Reader, dest io.Writer, totalBytes int64) (written int64, err error) {
 	buf := make([]byte, 32*1024)
-	showPercentage := length > int64(len(buf))
+	showPercentage := totalBytes > int64(len(buf))
 	percentage := ""
 	if showPercentage {
 		percentage = " 0%"
 	}
 	fmt.Print(percentage)
-	for {
-		nr, er := source.Read(buf)
-		if nr > 0 {
-			nw, ew := dest.Write(buf[0:nr])
-			if nw > 0 {
-				written += int64(nw)
+
+	lastPercent := -1
+	passthru := internal.PassThru{
+		Reader: source,
+		Callback: func(written int64) {
+			if showPercentage {
+				percent := int(float64(written*100)/float64(totalBytes)+0.5)
+				if percent != lastPercent {
+					fmt.Print(strings.Repeat("\b", len(percentage)))
+					percentage = " " + strconv.Itoa(percent) + "%"
+					fmt.Print(percentage)
+					lastPercent = percent
+				}
 			}
-			if ew != nil {
-				err = ew
-				break
-			}
-			if nr != nw {
-				err = io.ErrShortWrite
-				break
-			}
-		}
-		if er == io.EOF {
-			break
-		}
-		if er != nil {
-			err = er
-			break
-		}
-		if showPercentage {
-			fmt.Print(strings.Repeat("\b", len(percentage)))
-			percentage = " " + strconv.Itoa(int(float64(written*100)/float64(length)+0.5)) + "%"
-			fmt.Print(percentage)
-		}
+		},
 	}
+
+	bytesCopied, err := io.CopyBuffer(dest, &passthru, buf)
+
 	if showPercentage {
 		fmt.Print(strings.Repeat("\b", len(percentage)))
 		fmt.Print(strings.Repeat(" ", len(percentage)))
 		fmt.Print(strings.Repeat("\b", len(percentage)))
 	}
-	return written, err
+
+	return bytesCopied, err
 }

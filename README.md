@@ -1,13 +1,10 @@
 mirror
 ======
-
 The `mirror` tool mirrors a local directory tree to a remote server via SFTP. Use it in cases where rsync doesn't work or might be too complicated to get running (like on some Windows systems).
-
 
 Usage
 -----
 `mirror [OPTIONS] localPath user[:password]@remoteHost[:port]/path`
-
 
 The options are:  
 `-h` `--help` Shows a help message  

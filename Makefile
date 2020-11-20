@@ -1,10 +1,9 @@
-format: FORCE
-	goimports -w src\mirror src\console
+build:
+	go build -o bin/mirror mirror/cmd/mirror
 
-bin\mirror.exe: $(DIR)src/mirror/*.go $(DIR)src/console/*.go
-	go install mirror
+format:
+	goimports -w cmd internal
 
-compress: bin\mirror.exe
-	upx -t bin\mirror.exe || upx -q bin\mirror.exe
-
-FORCE:
+release:
+	GOARCH=amd64 GOOS=windows go build -o bin/windows_amd64/mirror.exe -a -ldflags="-w -s" mirror/cmd/mirror
+	upx -9 bin/windows_amd64/mirror.exe

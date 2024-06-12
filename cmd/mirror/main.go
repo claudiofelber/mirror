@@ -18,7 +18,7 @@ import (
 	"golang.org/x/crypto/ssh"
 )
 
-const ProgramVersion = "1.2"
+const ProgramVersion = "1.2.1"
 
 type options struct {
 	Simulate       bool     `short:"s" long:"simulate" description:"Shows what files would be copied or deleted but does not actually do it"`
@@ -139,7 +139,7 @@ func parseOptions() (options options) {
 }
 
 func printUsage(parser *flags.Parser) {
-	fmt.Printf("SFTP mirror %s, (c) 2013–1017 Perron2 GmbH, Claudio Felber, All Rights Reserved\n\n", ProgramVersion)
+	fmt.Printf("SFTP mirror %s, (c) 2013–2024 Perron2 GmbH, Claudio Felber, All Rights Reserved\n\n", ProgramVersion)
 	parser.WriteHelp(os.Stdout)
 	fmt.Println()
 }
@@ -424,7 +424,7 @@ func copyFile(source io.Reader, dest io.Writer, totalBytes int64) (written int64
 		Reader: source,
 		Callback: func(written int64) {
 			if showPercentage {
-				percent := int(float64(written*100)/float64(totalBytes)+0.5)
+				percent := int(float64(written*100)/float64(totalBytes) + 0.5)
 				if percent != lastPercent {
 					fmt.Print(strings.Repeat("\b", len(percentage)))
 					percentage = " " + strconv.Itoa(percent) + "%"

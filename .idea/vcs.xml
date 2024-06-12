@@ -9,10 +9,5 @@
   </component>
   <component name="VcsDirectoryMappings">
     <mapping directory="" vcs="Git" />
-    <mapping directory="$PROJECT_DIR$/internal/github.com/jessevdk/go-flags" vcs="Git" />
-    <mapping directory="$PROJECT_DIR$/internal/github.com/kr/fs" vcs="Git" />
-    <mapping directory="$PROJECT_DIR$/internal/github.com/pkg/errors" vcs="Git" />
-    <mapping directory="$PROJECT_DIR$/internal/github.com/pkg/sftp" vcs="Git" />
-    <mapping directory="$PROJECT_DIR$/internal/golang.org/x/crypto" vcs="Git" />
   </component>
 </project>

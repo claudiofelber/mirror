@@ -1,3 +1,5 @@
+BUILDFLAGS := -a -ldflags="-s -w" -trimpath
+
 ifdef ComSpec
         EXE := .exe
 endif
@@ -9,9 +11,16 @@ format:
 	goimports -w cmd internal
 
 release-windows:
-	GOARCH=amd64 GOOS=windows go build -o bin/windows_amd64/mirror.exe -a -ldflags="-w -s" mirror/cmd/mirror
+	GOOS=windows GOARCH=amd64 go build $(BUILDFLAGS) -o bin/windows_amd64/mirror.exe mirror/cmd/mirror
 	upx -9 bin/windows_amd64/mirror.exe
 
+release-linux:
+	GOOS=linux GOARCH=amd64 go build $(BUILDFLAGS) -o bin/linux_amd64/mirror mirror/cmd/mirror
+	upx -9 bin/linux_amd64/mirror
+
 release-darwin:
-	GOARCH=amd64 GOOS=darwin go build -o bin/darwin_amd64/mirror -a -ldflags="-w -s" mirror/cmd/mirror
+	GOOS=darwin GOARCH=amd64 go build $(BUILDFLAGS) -o bin/darwin_amd64/mirror mirror/cmd/mirror
 #	upx -9 bin/darwin_amd64/mirror
+
+release-darwin-arm:
+	GOOS=darwin GOARCH=arm64 go build $(BUILDFLAGS) -o bin/darwin_arm64/mirror mirror/cmd/mirror
